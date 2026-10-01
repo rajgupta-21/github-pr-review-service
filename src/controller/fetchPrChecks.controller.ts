@@ -24,14 +24,21 @@ export async function FetchPrChecks(req: Request, res: Response) {
       });
     }
 
-    const octokit = getOctokit(req.user?.githubAccessToken);
+    /*
+    getOctokit always returns a client, even with no token — so check the
+    token itself. Without this the GitHub call throws and a user who simply
+    has not connected GitHub gets a 500 instead of being told to sign in.
+    */
+    const accessToken = req.user?.githubAccessToken;
 
-    if (!octokit) {
+    if (!accessToken) {
       return res.status(401).json({
-        message: "GitHub authentication failed. Please login again",
+        message: "GitHub account not connected. Please sign in with GitHub",
         action: "login required",
       });
     }
+
+    const octokit = getOctokit(accessToken);
 
     const prNumber = Number(pull_number);
 

@@ -7,6 +7,20 @@ const router = Router();
 
 router.get("/repo", authMiddleware, async (req, res) => {
   try {
+    /*
+    A user who signed up with email and password has no GitHub token.
+    Without this the fetch below runs with "Bearer undefined", GitHub
+    answers with an error object rather than an array, and .map() throws —
+    the repositories screen then shows a generic 500 instead of a prompt
+    to connect GitHub.
+    */
+    if (!req.user?.githubAccessToken) {
+      return res.status(401).json({
+        message: "GitHub account not connected. Please sign in with GitHub",
+        action: "login required",
+      });
+    }
+
     const cacheKey = `repos:${req.user?.githubId}`;
     const cachedRepo = await redis.get(cacheKey);
     if (cachedRepo) {
