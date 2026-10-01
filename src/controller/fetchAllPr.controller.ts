@@ -3,11 +3,15 @@ import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { PrModel } from "../schema/Pr.schema";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "../services/octokit.service";
+import { getUserGithubToken } from "../services/userToken.service";
 import { isSameUser } from "../utils/ownership.util";
 
 export async function FetchAllUserPr(req: Request, res: Response) {
   try {
-    const { userName, repoName, userId } = req.params;
+    // validate(prSchemas.listForRepo) has already checked these
+    const userName = String(req.params.userName);
+    const repoName = String(req.params.repoName);
+    const userId = String(req.params.userId);
 
     if (!userName || !repoName || !userId) {
       return res.status(400).json({
@@ -25,21 +29,17 @@ export async function FetchAllUserPr(req: Request, res: Response) {
       });
     }
 
-    const user = await UserModel.findById(userId);
-    if (!user?.githubAccessToken) {
+    // Token is encrypted and select:false — see services/userToken.service.ts
+    const accessToken = await getUserGithubToken(String(userId));
+
+    if (!accessToken) {
       return res.status(401).json({
-        message: "GitHub account not connected. Please login first",
+        message: "GitHub account not connected. Please sign in with GitHub",
         action: "login required",
       });
     }
 
-    const octokit = getOctokit(user.githubAccessToken);
-    if (!octokit) {
-      return res.status(401).json({
-        message: "Failed to authenticate with GitHub",
-        action: "auth failed",
-      });
-    }
+    const octokit = getOctokit(accessToken);
 
     // Fetch all PRs from GitHub
     const allPrsResponse = await octokit.rest.pulls.list({
@@ -83,7 +83,6 @@ export async function FetchAllUserPr(req: Request, res: Response) {
           title: githubPr.title,
           body: githubPr.body,
           state: githubPr.state,
-          merged: githubPr.merged,
           draft: githubPr.draft,
           author: {
             login: githubPr.user?.login,
@@ -97,10 +96,13 @@ export async function FetchAllUserPr(req: Request, res: Response) {
           githubUrl: githubPr.html_url,
           diffUrl: githubPr.diff_url,
           patchUrl: githubPr.patch_url,
-          commits: githubPr.commits,
-          additions: githubPr.additions,
-          deletions: githubPr.deletions,
-          changedFiles: githubPr.changed_files,
+          /*
+          merged, commits, additions, deletions and changedFiles are not
+          returned by the list endpoint — only by pulls.get. They used to
+          be written here as undefined, which wiped values a previous
+          single-PR fetch had stored. They are left untouched instead and
+          filled in by /user/pull-request/... when a PR is opened.
+          */
           createdAtGithub: githubPr.created_at,
           updatedAtGithub: githubPr.updated_at,
           closedAtGithub: githubPr.closed_at,

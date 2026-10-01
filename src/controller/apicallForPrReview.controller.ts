@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "../services/octokit.service";
 import { runAIReview } from "../services/prContext.service";
+import { getUserGithubToken } from "../services/userToken.service";
 import { isSameUser } from "../utils/ownership.util";
 
 export async function AiReviewForPR(req: Request, res: Response) {
@@ -25,23 +26,16 @@ export async function AiReviewForPR(req: Request, res: Response) {
       });
     }
 
-    const getUser = await UserModel.findById(userId);
+    const accessToken = await getUserGithubToken(String(userId));
 
-    if (!getUser) {
-      return res.status(404).json({
-        message: "User doesn't exist",
-        action: "failure",
-      });
-    }
-
-    const octokit = getOctokit(getUser.githubAccessToken!);
-
-    if (!octokit) {
+    if (!accessToken) {
       return res.status(401).json({
-        message: "Failed to authenticate GitHub",
-        action: "failure",
+        message: "GitHub account not connected. Please sign in with GitHub",
+        action: "login required",
       });
     }
+
+    const octokit = getOctokit(accessToken);
 
     const pullNumber = Number(pr_Number);
 

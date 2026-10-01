@@ -119,6 +119,13 @@ export async function RepoOverview(req: Request, res: Response) {
         defaultBranch: repo.defaultBranch,
         connected: repo.connected,
         webhookActive: repo.webhookActive,
+        /*
+        A registered hook is not the same as a working one. The screen
+        shows "waiting for first delivery" until something actually
+        arrives, instead of claiming the repository is covered.
+        */
+        lastWebhookDeliveryAt: repo.lastWebhookDeliveryAt ?? null,
+        lastWebhookEvent: repo.lastWebhookEvent ?? null,
         settings: repo.settings,
         // How many PRs this repo has a review on — the "Open PRs" column
         reviewedPrCount: latest.length,

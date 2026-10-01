@@ -1,6 +1,7 @@
 import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { ReviewModel } from "../schema/Review.schema";
 import { WorkflowRunModel } from "../schema/WorkflowRun.schema";
+import { env } from "../config/env";
 import type {
   ReviewResult,
   WorkflowExecutionResult,
@@ -141,6 +142,7 @@ export async function saveReview(params: {
       findings,
       ...countBySeverity(findings),
       strengths: review.strengths || [],
+      model: env.GROQ_MODEL,
       trigger,
       durationMs,
     });

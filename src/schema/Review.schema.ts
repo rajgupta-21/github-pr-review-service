@@ -126,6 +126,13 @@ const ReviewSchema = new Schema({
     default: [],
   },
 
+  /*
+  Which model produced this review. A team deciding whether to trust this
+  in their pipeline reasonably wants to know, and it also tells us which
+  model a disputed finding came from after we change the default.
+  */
+  model: String,
+
   // "manual" when a user pressed Review, otherwise the workflow trigger
   trigger: {
     type: String,

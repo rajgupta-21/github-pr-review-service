@@ -3,11 +3,16 @@ import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { PrModel } from "../schema/Pr.schema";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "../services/octokit.service";
+import { getUserGithubToken } from "../services/userToken.service";
 import { isSameUser } from "../utils/ownership.util";
 
 export async function FetchPrByNo(req: Request, res: Response) {
   try {
-    const { prNumber, userId, owner, repo } = req.params;
+    // validate(prSchemas.byNumber) coerces prNumber to a number
+    const owner = String(req.params.owner);
+    const repo = String(req.params.repo);
+    const userId = String(req.params.userId);
+    const prNumber = Number(req.params.prNumber);
 
     if (!prNumber || !userId || !owner || !repo) {
       return res.status(400).json({
@@ -25,21 +30,16 @@ export async function FetchPrByNo(req: Request, res: Response) {
       });
     }
 
-    const user = await UserModel.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-        action: "user not found",
-      });
-    }
+    const accessToken = await getUserGithubToken(String(userId));
 
-    const octokit = getOctokit(user.githubAccessToken);
-    if (!octokit) {
+    if (!accessToken) {
       return res.status(401).json({
-        message: "GitHub authentication failed. Please login again",
+        message: "GitHub account not connected. Please sign in with GitHub",
         action: "login required",
       });
     }
+
+    const octokit = getOctokit(accessToken);
 
     // Fetch PR from GitHub API
     const PullRequest = await octokit.rest.pulls.get({
@@ -74,7 +74,7 @@ export async function FetchPrByNo(req: Request, res: Response) {
     const existingPr = await PrModel.findOne({
       repoId: connectedRepo._id,
       githubPrNumber: prNumber,
-    });
+    }).lean();
 
     // Map GitHub PR response to schema fields
     const prData = {

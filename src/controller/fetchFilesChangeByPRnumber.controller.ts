@@ -1,11 +1,16 @@
 import { Request, Response } from "express";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "../services/octokit.service";
+import { getUserGithubToken } from "../services/userToken.service";
 import { isSameUser } from "../utils/ownership.util";
 
 export async function fecthChangedFilesForPr(req: Request, res: Response) {
   try {
-    const { pull_number, userId, owner, repo } = req.params;
+    // validate(prSchemas.filesChanged) coerces pull_number to a number
+    const owner = String(req.params.owner);
+    const repo = String(req.params.repo);
+    const userId = String(req.params.userId);
+    const pull_number = Number(req.params.pull_number);
     if (!pull_number || !userId || !owner || !repo) {
       return res
         .status(400)
@@ -20,13 +25,16 @@ export async function fecthChangedFilesForPr(req: Request, res: Response) {
         action: "forbidden",
       });
     }
-    const user = await UserModel.findById(userId);
-    if (!user) {
-      return res
-        .status(400)
-        .json({ message: "please login first", action: "Login required" });
+    const accessToken = await getUserGithubToken(String(userId));
+
+    if (!accessToken) {
+      return res.status(401).json({
+        message: "GitHub account not connected. Please sign in with GitHub",
+        action: "login required",
+      });
     }
-    const octokit = getOctokit(user.githubAccessToken);
+
+    const octokit = getOctokit(accessToken);
 
     const files = await octokit.pulls.listFiles({
       owner,

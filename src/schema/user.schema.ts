@@ -48,8 +48,16 @@ const UserSchema = new mongoose.Schema(
       type: String,
     },
 
+    /*
+    Encrypted at rest (utils/crypto.util.ts) and never returned by a
+    default query. Code that needs it must ask explicitly with
+    .select("+githubAccessToken") and decrypt — see services/userToken.service.ts.
+    This token carries the GitHub `repo` scope, so a stray query that
+    returned it would be handing out full source-code access.
+    */
     githubAccessToken: {
       type: String,
+      select: false,
     },
 
     isVerified: {

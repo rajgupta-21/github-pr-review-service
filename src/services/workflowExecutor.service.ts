@@ -1,6 +1,7 @@
 import type { Types } from "mongoose";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "./octokit.service";
+import { getUserGithubToken } from "./userToken.service";
 import {
   executeWorkflowFunction,
   isExecutableFunction,
@@ -229,18 +230,55 @@ async function runWorkflow(params: {
     );
   }
 
-  const user = await UserModel.findById(connectedRepo.userId);
-  if (!user?.githubAccessToken) {
-    throw new Error("User GitHub token not found");
+  /*
+  Webhook-triggered runs have no request context, so the token is loaded
+  from the owning user here.
+  */
+  const accessToken = await getUserGithubToken(String(connectedRepo.userId));
+
+  if (!accessToken) {
+    throw new Error(
+      "GitHub account not connected for the owner of this repository",
+    );
   }
 
-  const octokit = getOctokit(user.githubAccessToken);
-  const prStatus = await fetchPRStatus(
-    octokit,
-    connectedRepo.owner,
-    connectedRepo.name,
-    prNumber,
-  );
+  const octokit = getOctokit(accessToken);
+
+  /*
+  A wrong PR number is the most common way a manual run goes wrong, and
+  GitHub answers it with a bare 404. Letting that throw turned a typo into
+  a 500 with a link to the GitHub docs, which tells the user nothing.
+  Translate it into a skipped run with a message they can act on.
+  */
+  let prStatus;
+
+  try {
+    prStatus = await fetchPRStatus(
+      octokit,
+      connectedRepo.owner,
+      connectedRepo.name,
+      prNumber,
+    );
+  } catch (error) {
+    const status = (error as { status?: number })?.status;
+    const repoLabel = `${connectedRepo.owner}/${connectedRepo.name}`;
+
+    if (status === 404) {
+      return buildSkippedResult(
+        baseResult,
+        `Pull request #${prNumber} does not exist in ${repoLabel}. Check the number, or confirm the repository still has that PR.`,
+      );
+    }
+
+    if (status === 401 || status === 403) {
+      return buildSkippedResult(
+        baseResult,
+        `GitHub refused access to ${repoLabel}. Reconnect your GitHub account and make sure the token still covers this repository.`,
+      );
+    }
+
+    throw error;
+  }
 
   if (prStatus.merged) {
     return buildSkippedResult(

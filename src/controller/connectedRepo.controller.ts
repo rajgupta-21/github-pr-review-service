@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
+import type { GithubRepoResponse } from "../types/github.types";
 
 export async function ConnectRepo(req: Request, res: Response) {
   try {
@@ -32,7 +33,7 @@ export async function ConnectRepo(req: Request, res: Response) {
       },
     });
 
-    const repos = await response.json();
+    const repos = (await response.json()) as GithubRepoResponse;
 
     if (!response.ok) {
       return res.status(response.status).json({

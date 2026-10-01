@@ -40,6 +40,20 @@ const ConnectRepoSchema = new mongoose.Schema(
     webhookId: {
       type: Number,
     },
+    /*
+    When GitHub last actually delivered an event here.
+
+    webhookActive only means "a hook was registered" — it was reported as
+    success even when GITHUB_WEBHOOK_URL was unset and nothing could ever
+    arrive. Until this is set, the UI says "waiting for first delivery"
+    rather than claiming the repository is covered.
+    */
+    lastWebhookDeliveryAt: {
+      type: Date,
+    },
+    lastWebhookEvent: {
+      type: String,
+    },
     visibility: {
       type: String,
       enum: ["private", "public"],

@@ -1,57 +1,72 @@
 import bcrypt from "bcrypt";
-import dotenv from "dotenv";
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import { env } from "../config/env";
 import { UserModel } from "../schema/user.schema";
-dotenv.config();
 
 export default async function LoginUser(req: Request, res: Response) {
   try {
-    console.log(process.env.JWT_SECRET);
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(401).json({ message: "please enter credentials" });
-    }
+
     const checkExistingUser = await UserModel.findOne({ email }).select(
       "+password",
     );
 
-    if (!checkExistingUser) {
-      return res
-        .status(401)
-        .json({ message: "Please register an account first" });
+    /*
+    Same response whether the account is missing or the password is wrong.
+    Distinguishing them lets an attacker enumerate which emails have
+    accounts here.
+    */
+    const invalidCredentials = () =>
+      res.status(401).json({
+        message: "Incorrect email or password",
+        action: "failure",
+      });
+
+    if (!checkExistingUser?.password) {
+      return invalidCredentials();
     }
-    /* compare hash */
-    const decrypt = await bcrypt.compare(password, checkExistingUser.password);
-    if (!decrypt) {
-      return res.status(401).json({ message: "Wrong Credentials" });
+
+    const passwordMatches = await bcrypt.compare(
+      password,
+      checkExistingUser.password,
+    );
+
+    if (!passwordMatches) {
+      return invalidCredentials();
     }
+
     const payload = {
       id: checkExistingUser._id,
       email: checkExistingUser.email,
     };
-    /* Session implmentation  */
-    console.log(process.env.JWT_SECRET);
-    const token = jwt.sign(payload, process.env.JWT_SECRET as string, {
+
+    const token = jwt.sign(payload, env.JWT_SECRET, {
       expiresIn: "7d",
     });
 
-    /**
-    cookies implmented 
-    **/
-    res.cookie("token", token, {
-      sameSite: "lax",
-      httpOnly: true,
-      secure: false,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Shared cookie options — see config/env.ts
+    res.cookie("token", token, env.cookie);
 
-    return res.status(200).json({ message: "Succesfully Logged in" });
+    await UserModel.updateOne(
+      { _id: checkExistingUser._id },
+      { lastLogin: new Date() },
+    );
+
+    return res.status(200).json({
+      message: "Successfully logged in",
+      action: "success",
+    });
   } catch (error) {
     console.error("Login error:", error);
+
+    /*
+    The error message is logged, not returned. It can carry database
+    details that are useful to an attacker and meaningless to a user.
+    */
     return res.status(500).json({
-      message: "somthing went wrong",
-      error: error instanceof Error ? error.message : "Unknown error",
+      message: "Something went wrong. Please try again",
+      action: "server failure",
     });
   }
 }

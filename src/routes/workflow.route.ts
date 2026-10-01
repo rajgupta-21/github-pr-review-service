@@ -1,5 +1,8 @@
 import { Router } from "express";
 import authMiddleware from "../middleware/auth.middleware";
+import { workflowRunLimiter } from "../middleware/rateLimit.middleware";
+import { validate } from "../middleware/validate.middleware";
+import { workflowSchemas } from "../schema/request.schema";
 import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { getOctokit } from "../services/octokit.service";
 import { ensureRepoWebhook } from "../services/githubWebhook.service";
@@ -47,17 +50,13 @@ function remapNodeTypes(nodes: any[]) {
   }));
 }
 
-router.get("/workflow", authMiddleware, async (req: any, res) => {
+router.get(
+  "/workflow",
+  authMiddleware,
+  validate(workflowSchemas.get),
+  async (req: any, res) => {
   try {
-    const rawRepoId = req.query.repoId;
-    const repoId = rawRepoId !== undefined ? Number(rawRepoId) : NaN;
-
-    if (rawRepoId === undefined || Number.isNaN(repoId)) {
-      return res.status(400).json({
-        message:
-          "repoId query parameter is required and must be a valid number",
-      });
-    }
+    const { repoId } = req.query;
 
     const connectedRepo = await ConnectedRepo.findOne({
       userId: req.user._id,
@@ -89,24 +88,16 @@ router.get("/workflow", authMiddleware, async (req: any, res) => {
     console.error(error);
     res.status(500).json({ message: "Failed to load workflow" });
   }
-});
+},
+);
 
-router.post("/workflow", authMiddleware, async (req: any, res) => {
+router.post(
+  "/workflow",
+  authMiddleware,
+  validate(workflowSchemas.save),
+  async (req: any, res) => {
   try {
-    const { repoId, nodes, edges, workflow: clientDefinition } = req.body;
-    const parsedRepoId = repoId !== undefined ? Number(repoId) : NaN;
-
-    if (
-      repoId === undefined ||
-      Number.isNaN(parsedRepoId) ||
-      !Array.isArray(nodes) ||
-      !Array.isArray(edges)
-    ) {
-      return res.status(400).json({
-        message:
-          "repoId, nodes and edges are required and repoId must be a valid number",
-      });
-    }
+    const { repoId: parsedRepoId, nodes, edges, workflow: clientDefinition } = req.body;
 
     const definition =
       clientDefinition || deriveWorkflowDefinition(nodes);
@@ -159,29 +150,24 @@ router.post("/workflow", authMiddleware, async (req: any, res) => {
     console.error(error);
     res.status(500).json({ message: "Failed to save workflow" });
   }
-});
+},
+);
 
-router.post("/workflow/execute", authMiddleware, async (req: any, res) => {
+router.post(
+  "/workflow/execute",
+  authMiddleware,
+  // Review nodes call the model, so runs are throttled like /pr/ai-review
+  workflowRunLimiter,
+  validate(workflowSchemas.execute),
+  async (req: any, res) => {
   try {
     const {
-      repoId,
-      prNumber,
-      trigger = "manual_trigger",
+      repoId: parsedRepoId,
+      prNumber: parsedPrNumber,
+      trigger,
       nodes: clientNodes,
       edges: clientEdges,
     } = req.body;
-    const parsedRepoId = repoId !== undefined ? Number(repoId) : NaN;
-    const parsedPrNumber = prNumber !== undefined ? Number(prNumber) : NaN;
-
-    if (
-      Number.isNaN(parsedRepoId) ||
-      Number.isNaN(parsedPrNumber) ||
-      parsedPrNumber < 1
-    ) {
-      return res.status(400).json({
-        message: "repoId and a valid prNumber are required",
-      });
-    }
 
     const connectedRepo = await ConnectedRepo.findOne({
       userId: req.user._id,
@@ -225,16 +211,16 @@ router.post("/workflow/execute", authMiddleware, async (req: any, res) => {
         error instanceof Error ? error.message : "Workflow execution failed",
     });
   }
-});
+},
+);
 
-router.post("/workflow/webhook/enable", authMiddleware, async (req: any, res) => {
+router.post(
+  "/workflow/webhook/enable",
+  authMiddleware,
+  validate(workflowSchemas.enableWebhook),
+  async (req: any, res) => {
   try {
-    const { repoId } = req.body;
-    const parsedRepoId = repoId !== undefined ? Number(repoId) : NaN;
-
-    if (Number.isNaN(parsedRepoId)) {
-      return res.status(400).json({ message: "repoId is required" });
-    }
+    const { repoId: parsedRepoId } = req.body;
 
     const connectedRepo = await ConnectedRepo.findOne({
       userId: req.user._id,
@@ -258,7 +244,11 @@ router.post("/workflow/webhook/enable", authMiddleware, async (req: any, res) =>
     });
 
     return res.status(200).json({
-      message: "Webhook enabled",
+      // Only claim it is on when it actually is
+      message: webhookStatus.webhookActive
+        ? "Webhook enabled — reviews will run automatically on new pull requests"
+        : webhookStatus.reason || "Webhook could not be enabled",
+      action: webhookStatus.webhookActive ? "success" : "not configured",
       ...webhookStatus,
     });
   } catch (error) {
@@ -268,6 +258,7 @@ router.post("/workflow/webhook/enable", authMiddleware, async (req: any, res) =>
         error instanceof Error ? error.message : "Failed to enable webhook",
     });
   }
-});
+},
+);
 
 export default router;

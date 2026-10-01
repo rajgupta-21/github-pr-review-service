@@ -37,7 +37,7 @@ router.get("/repo", authMiddleware, async (req, res) => {
       },
     );
 
-    const repos = await response.json();
+    const repos = (await response.json()) as Repos[];
 
     const formattedRepos = repos.map((repo: Repos) => ({
       id: repo.id,

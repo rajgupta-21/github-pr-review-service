@@ -44,6 +44,19 @@ router.post("/", async (req, res) => {
       connected: true,
     }).lean();
 
+    /*
+    Record the delivery before doing any work. Even an event we ignore
+    proves the webhook is wired up correctly, which is exactly what the
+    repository screen needs to show instead of an unverified "Webhook on".
+    */
+    await ConnectedRepo.updateMany(
+      { repoId, connected: true },
+      {
+        lastWebhookDeliveryAt: new Date(),
+        lastWebhookEvent: `pull_request.${data.action}`,
+      },
+    );
+
     const results = [];
 
     for (const connectedRepo of connectedRepos) {

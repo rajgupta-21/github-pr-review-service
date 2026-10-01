@@ -1,5 +1,17 @@
 import OpenAI from "openai";
 
+/*
+Groq retires model ids without much notice — llama-3.3-70b-versatile was
+decommissioned and started answering 404 "model_not_found". Keep the id in
+one place, and let .env override it so the next retirement is a config
+change rather than a code change.
+
+Check what your key can reach with:
+  curl -H "Authorization: Bearer $GROQ_API_KEY" \
+       https://api.groq.com/openai/v1/models
+*/
+const REVIEW_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+
 const grok = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
 
@@ -81,8 +93,7 @@ Return ONLY valid JSON.
 `;
 
   const response = await grok.chat.completions.create({
-    // Grok model
-    model: "llama-3.3-70b-versatile",
+    model: REVIEW_MODEL,
     response_format: {
       type: "json_object",
     },
@@ -101,5 +112,7 @@ Return ONLY valid JSON.
     ],
   });
 
-  return response.choices[0].message.content ?? "{}";
+  // An empty choices array would otherwise throw before the caller can
+  // JSON.parse the result into an empty review.
+  return response.choices[0]?.message?.content ?? "{}";
 }

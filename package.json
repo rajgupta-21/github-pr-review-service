@@ -4,7 +4,11 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --watch src/index.ts"
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "migrate:encrypt-tokens": "bun scripts/encrypt-existing-tokens.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -26,9 +30,12 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
     "ioredis": "^5.11.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.6.2",
-    "openai": "^6.42.0"
+    "openai": "^6.42.0",
+    "zod": "^4.6.5"
   }
 }

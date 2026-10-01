@@ -125,6 +125,8 @@ export async function FetchStoredReview(req: Request, res: Response) {
         : null,
       // What the merge gate is set to, so the page can explain a held merge
       mergeGate: connectedRepo.settings?.mergeGate || "Critical",
+      // Named on screen so a team can judge whether to trust it
+      model: review.model ?? null,
     });
   } catch (error) {
     console.error("FetchStoredReview error:", error);

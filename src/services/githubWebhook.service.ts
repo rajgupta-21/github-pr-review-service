@@ -39,11 +39,21 @@ export async function ensureRepoWebhook(params: {
   owner: string;
   repo: string;
   repoDocId: string;
-}): Promise<{ webhookActive: boolean; webhookId?: number }> {
+}): Promise<{ webhookActive: boolean; webhookId?: number; reason?: string }> {
   const webhookUrl = getWebhookUrl();
+
+  /*
+  Returning a reason rather than a bare false. Enabling used to report
+  success while silently doing nothing, so the UI showed "Webhook on" for
+  a repository that could never receive an event.
+  */
   if (!webhookUrl) {
     console.warn("GITHUB_WEBHOOK_URL not set — skipping webhook registration");
-    return { webhookActive: false };
+    return {
+      webhookActive: false,
+      reason:
+        "No public webhook URL is configured on the server, so GitHub has nowhere to send events. Workflows can still be run by hand.",
+    };
   }
 
   const { octokit, owner, repo, repoDocId } = params;
