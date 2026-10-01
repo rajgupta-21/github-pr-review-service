@@ -1,6 +1,7 @@
 import type { Octokit } from "@octokit/rest";
 import type { PRFile, ReviewResult, WorkflowContext } from "../types/workflow.types";
 import { generatePRReview } from "../utils/genrateResponse";
+import { saveReview } from "./reviewStore.service";
 
 export async function fetchPRContext(
   octokit: Octokit,
@@ -84,6 +85,7 @@ export async function ensurePRContext(ctx: WorkflowContext) {
 export async function runAIReview(
   ctx: WorkflowContext,
   reviewContext?: string,
+  trigger: string = "manual",
 ): Promise<ReviewResult> {
   await ensurePRContext(ctx);
 
@@ -93,9 +95,28 @@ export async function runAIReview(
     files: ctx.files!,
   };
 
+  const startedAt = Date.now();
   const rawReview = await generatePRReview(reviewPayload, reviewContext);
   const review = JSON.parse(rawReview || "{}") as ReviewResult;
   ctx.review = review;
+
+  /*
+  Every review path reaches this function, so storing here is enough to
+  cover the Review button, workflow nodes and webhook runs alike.
+  saveReview swallows its own errors — the review is already in hand and
+  must be returned whether or not the write succeeded.
+  */
+  await saveReview({
+    userId: ctx.userId,
+    owner: ctx.owner,
+    repo: ctx.repo,
+    prNumber: ctx.prNumber,
+    review,
+    trigger,
+    durationMs: Date.now() - startedAt,
+    prTitle: ctx.pr!.title,
+  });
+
   return review;
 }
 

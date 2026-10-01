@@ -54,6 +54,8 @@ export type WorkflowContext = {
   repoId: number;
   prNumber: number;
   octokit: Octokit;
+  // What started this run — stored against the review for the activity feed
+  trigger?: string;
   pr?: {
     title: string;
     description: string | null;

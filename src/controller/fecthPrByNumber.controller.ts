@@ -3,6 +3,7 @@ import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { PrModel } from "../schema/Pr.schema";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "../services/octokit.service";
+import { isSameUser } from "../utils/ownership.util";
 
 export async function FetchPrByNo(req: Request, res: Response) {
   try {
@@ -12,6 +13,15 @@ export async function FetchPrByNo(req: Request, res: Response) {
       return res.status(400).json({
         message: "Missing required parameters: prNumber, userId, owner, repo",
         action: "credentials missing",
+      });
+    }
+
+    // The URL keeps userId so existing frontend calls work unchanged, but
+    // it has to be the caller's own id — authMiddleware set req.user.
+    if (!isSameUser(req, String(userId))) {
+      return res.status(403).json({
+        message: "You can only access your own pull requests",
+        action: "forbidden",
       });
     }
 

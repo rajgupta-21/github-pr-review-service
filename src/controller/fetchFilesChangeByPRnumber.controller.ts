@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { UserModel } from "../schema/user.schema";
 import { getOctokit } from "../services/octokit.service";
+import { isSameUser } from "../utils/ownership.util";
 
 export async function fecthChangedFilesForPr(req: Request, res: Response) {
   try {
@@ -9,6 +10,15 @@ export async function fecthChangedFilesForPr(req: Request, res: Response) {
       return res
         .status(400)
         .json({ message: "missing credentials", action: "failure" });
+    }
+
+    // The URL keeps userId so existing frontend calls work unchanged, but
+    // it has to be the caller's own id — authMiddleware set req.user.
+    if (!isSameUser(req, String(userId))) {
+      return res.status(403).json({
+        message: "You can only access your own pull requests",
+        action: "forbidden",
+      });
     }
     const user = await UserModel.findById(userId);
     if (!user) {

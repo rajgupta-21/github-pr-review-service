@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { fecthChangedFilesForPr } from "../controller/fetchFilesChangeByPRnumber.controller";
+import { FetchPrTimeline } from "../controller/fetchPrTimeline.controller";
 import authMiddleware from "../middleware/auth.middleware";
 const router = Router();
 
 router.get(
-  "/files-changed/:owner/:repo/:pull_number/:userId",
+  "/timeline/:owner/:repo/:pull_number",
   authMiddleware,
-  fecthChangedFilesForPr,
+  FetchPrTimeline,
 );
 
 export default router;

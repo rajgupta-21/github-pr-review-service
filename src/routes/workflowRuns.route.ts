@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { RespondRepoData } from "../controller/repoData.controller";
+import { WorkflowRuns } from "../controller/workflowRuns.controller";
 import authMiddleware from "../middleware/auth.middleware";
 const router = Router();
 
-router.get("/repo/:repoId", authMiddleware, RespondRepoData);
+router.get("/workflow/runs", authMiddleware, WorkflowRuns);
 
 export default router;

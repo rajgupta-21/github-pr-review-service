@@ -11,6 +11,7 @@ import type {
   WorkflowExecutionResult,
 } from "../types/workflow.types";
 import { fetchPRStatus } from "./prContext.service";
+import { saveWorkflowRun } from "./reviewStore.service";
 import {
   filterExecutableEdges,
   filterExecutableNodes,
@@ -45,6 +46,7 @@ type ConnectedRepoDoc = {
   repoId: number;
   owner: string;
   name: string;
+  fullName?: string;
   workflow?: WorkflowGraph | null;
 };
 
@@ -169,7 +171,39 @@ function buildSkippedResult(
   };
 }
 
+/*
+Public entry point.
+
+runWorkflow below does the actual work and has several exit points; this
+wrapper times it and records the result once, so the activity feed and the
+run trace get every run — completed, skipped or failed — without the inner
+function having to remember to save at each return.
+*/
 export async function executeWorkflow(params: {
+  connectedRepo: ConnectedRepoDoc;
+  trigger: string;
+  prNumber: number;
+}): Promise<WorkflowExecutionResult> {
+  const { connectedRepo } = params;
+  const startedAt = Date.now();
+
+  const result = await runWorkflow(params);
+
+  await saveWorkflowRun({
+    userId: String(connectedRepo.userId),
+    repoDocId: String(connectedRepo._id),
+    githubRepoId: connectedRepo.repoId,
+    repoFullName:
+      connectedRepo.fullName || `${connectedRepo.owner}/${connectedRepo.name}`,
+    workflowName: connectedRepo.workflow?.definition?.name || undefined,
+    result,
+    durationMs: Date.now() - startedAt,
+  });
+
+  return result;
+}
+
+async function runWorkflow(params: {
   connectedRepo: ConnectedRepoDoc;
   trigger: string;
   prNumber: number;
@@ -241,6 +275,7 @@ export async function executeWorkflow(params: {
     repoId: connectedRepo.repoId,
     prNumber,
     octokit,
+    trigger,
   };
 
   const executionOrder = getExecutionOrder(

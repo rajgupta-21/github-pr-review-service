@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { RespondRepoData } from "../controller/repoData.controller";
+import { DisconnectRepo } from "../controller/disconnectRepo.controller";
 import authMiddleware from "../middleware/auth.middleware";
 const router = Router();
 
-router.get("/repo/:repoId", authMiddleware, RespondRepoData);
+router.delete("/disconnect/:repoId", authMiddleware, DisconnectRepo);
 
 export default router;

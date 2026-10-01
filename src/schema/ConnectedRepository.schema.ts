@@ -82,6 +82,27 @@ const ConnectRepoSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    /*
+    Per-repository settings shown on the repository detail screen.
+    */
+    settings: {
+      // Run the workflow automatically when a webhook arrives
+      autoReview: {
+        type: Boolean,
+        default: true,
+      },
+      // Lowest severity that holds the merge. "none" disables the gate.
+      mergeGate: {
+        type: String,
+        enum: ["none", "Critical", "High", "Medium", "Low"],
+        default: "Critical",
+      },
+      // Paused repos keep their workflow but skip every run
+      paused: {
+        type: Boolean,
+        default: false,
+      },
+    },
   },
   {
     timestamps: true,

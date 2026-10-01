@@ -42,6 +42,7 @@ const workflowHandlers: Record<string, WorkflowHandler> = {
         node,
         "Review for bugs, security, performance, code quality, and maintainability.",
       ),
+      ctx.trigger,
     );
     return "AI code review completed";
   },
@@ -53,6 +54,7 @@ const workflowHandlers: Record<string, WorkflowHandler> = {
         node,
         "Focus exclusively on security vulnerabilities, unsafe patterns, injection risks, auth issues, and secrets exposure.",
       ),
+      ctx.trigger,
     );
     return "Security scan completed";
   },
@@ -64,6 +66,7 @@ const workflowHandlers: Record<string, WorkflowHandler> = {
         node,
         "Focus exclusively on performance issues, inefficient algorithms, memory usage, and scalability concerns.",
       ),
+      ctx.trigger,
     );
     return "Performance review completed";
   },
@@ -72,7 +75,7 @@ const workflowHandlers: Record<string, WorkflowHandler> = {
     await ensurePRContext(ctx);
 
     if (!ctx.review) {
-      await runAIReview(ctx);
+      await runAIReview(ctx, undefined, ctx.trigger);
     }
 
     const body = formatReviewAsComment(ctx.review!);
