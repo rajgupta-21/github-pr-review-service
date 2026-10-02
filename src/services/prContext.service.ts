@@ -115,6 +115,8 @@ export async function runAIReview(
     trigger,
     durationMs: Date.now() - startedAt,
     prTitle: ctx.pr!.title,
+    // Groups this pass with the others from the same run
+    runId: ctx.runId,
   });
 
   return review;

@@ -133,6 +133,17 @@ const ReviewSchema = new Schema({
   */
   model: String,
 
+  /*
+  Which workflow run produced this review.
+
+  A run executes several passes — security scan, code review, performance —
+  and each one stores its own review. Without a shared id the read path
+  could only take "the newest", which is whichever pass happened to finish
+  last and may have found nothing, hiding the findings of the others.
+  Null for a review a user started by hand.
+  */
+  runId: String,
+
   // "manual" when a user pressed Review, otherwise the workflow trigger
   trigger: {
     type: String,

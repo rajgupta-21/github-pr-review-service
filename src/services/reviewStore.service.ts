@@ -89,6 +89,7 @@ export async function saveReview(params: {
   durationMs?: number;
   prTitle?: string;
   prAuthor?: string;
+  runId?: string;
 }) {
   try {
     const {
@@ -101,6 +102,7 @@ export async function saveReview(params: {
       durationMs = 0,
       prTitle,
       prAuthor,
+      runId,
     } = params;
 
     const connectedRepo = await ConnectedRepo.findOne({
@@ -143,6 +145,7 @@ export async function saveReview(params: {
       ...countBySeverity(findings),
       strengths: review.strengths || [],
       model: env.GROQ_MODEL,
+      runId,
       trigger,
       durationMs,
     });
@@ -199,4 +202,94 @@ export async function saveWorkflowRun(params: {
     console.error("[reviewStore] Failed to store workflow run:", error);
     return null;
   }
+}
+
+/*
+Collapsing review passes into the one review a user thinks of.
+
+A workflow run executes several passes — security scan, code review,
+performance — and each stores its own Review document. Any code that took
+"the newest review for this PR" was therefore taking whichever pass
+finished last, which is frequently the one that found nothing. That hid
+real findings on the dashboard, the attention queue, the repository list
+and the PR report alike.
+
+Passes of one run share a runId. This folds them into a single logical
+review per pull request, and every read path uses it so the numbers agree
+wherever they appear.
+*/
+
+type ReviewLike = {
+  repoId: unknown;
+  prNumber: number;
+  runId?: string | null;
+  createdAt: Date;
+  overallScore?: number;
+  criticalCount?: number;
+  highCount?: number;
+  mediumCount?: number;
+  lowCount?: number;
+  findings?: unknown[];
+  // Mongoose lean() types this as nullable
+  recommendation?: string | null;
+  durationMs?: number;
+};
+
+/**
+ * Takes reviews sorted NEWEST FIRST and returns one merged review per pull
+ * request, built from the most recent run's passes.
+ */
+export function collapseRunPasses<T extends ReviewLike>(reviews: T[]): T[] {
+  const newestRun = new Map<string, string | null>();
+  const merged = new Map<string, T & { passCount: number; _scores: number[] }>();
+
+  for (const review of reviews) {
+    const key = `${review.repoId}#${review.prNumber}`;
+
+    if (!newestRun.has(key)) {
+      newestRun.set(key, review.runId ?? null);
+    }
+
+    const runOfThisPr = newestRun.get(key);
+    const existing = merged.get(key);
+
+    if (!existing) {
+      merged.set(key, {
+        ...review,
+        passCount: 1,
+        _scores: (review.overallScore ?? 0) > 0 ? [review.overallScore!] : [],
+      });
+      continue;
+    }
+
+    // Only fold in passes from the same run; older runs are history
+    const sameRun = runOfThisPr !== null && review.runId === runOfThisPr;
+    if (!sameRun) continue;
+
+    existing.criticalCount = (existing.criticalCount ?? 0) + (review.criticalCount ?? 0);
+    existing.highCount = (existing.highCount ?? 0) + (review.highCount ?? 0);
+    existing.mediumCount = (existing.mediumCount ?? 0) + (review.mediumCount ?? 0);
+    existing.lowCount = (existing.lowCount ?? 0) + (review.lowCount ?? 0);
+    existing.findings = [...(existing.findings ?? []), ...(review.findings ?? [])];
+    existing.durationMs = (existing.durationMs ?? 0) + (review.durationMs ?? 0);
+    existing.passCount += 1;
+
+    // One pass asking for changes is enough to ask for changes
+    if (review.recommendation === "Request Changes") {
+      existing.recommendation = "Request Changes";
+    }
+
+    // Mean of the passes that actually scored
+    if ((review.overallScore ?? 0) > 0) {
+      existing._scores.push(review.overallScore!);
+      existing.overallScore = Math.round(
+        existing._scores.reduce((total, value) => total + value, 0) / existing._scores.length,
+      );
+    }
+  }
+
+  return [...merged.values()].map((entry) => {
+    const { _scores, ...rest } = entry;
+    return rest as unknown as T;
+  });
 }

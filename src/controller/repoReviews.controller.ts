@@ -45,14 +45,49 @@ export async function RepoReviews(req: Request, res: Response) {
       .sort({ createdAt: -1 })
       .lean();
 
-    const latestByPr: Record<string, unknown> = {};
+    /*
+    One run produces several review passes. Collapse them so a PR row shows
+    the same totals as its report — otherwise the list could show 0 findings
+    for a PR whose security pass found four.
+    */
+    const newestRunByPr = new Map<string, string | null>();
+    const latestByPr: Record<string, any> = {};
 
     for (const review of reviews) {
       const key = String(review.prNumber);
 
-      if (latestByPr[key]) continue;
+      if (!newestRunByPr.has(key)) {
+        newestRunByPr.set(key, review.runId ?? null);
+      }
+
+      const runOfThisPr = newestRunByPr.get(key);
+
+      // Fold in later passes that belong to the same run
+      if (latestByPr[key]) {
+        const sameRun = runOfThisPr && review.runId === runOfThisPr;
+        if (!sameRun) continue;
+
+        const row = latestByPr[key];
+        row.criticalCount += review.criticalCount ?? 0;
+        row.highCount += review.highCount ?? 0;
+        row.mediumCount += review.mediumCount ?? 0;
+        row.lowCount += review.lowCount ?? 0;
+        row.findingCount += review.findings?.length ?? 0;
+        if (review.recommendation === "Request Changes") {
+          row.recommendation = "Request Changes";
+        }
+        // Mean of the passes that actually scored
+        if ((review.overallScore ?? 0) > 0) {
+          row._scores.push(review.overallScore);
+          row.overallScore = Math.round(
+            row._scores.reduce((t: number, v: number) => t + v, 0) / row._scores.length,
+          );
+        }
+        continue;
+      }
 
       latestByPr[key] = {
+        _scores: (review.overallScore ?? 0) > 0 ? [review.overallScore] : [],
         reviewId: review._id,
         prNumber: review.prNumber,
         overallScore: review.overallScore,
@@ -69,6 +104,9 @@ export async function RepoReviews(req: Request, res: Response) {
         reviewedAt: review.createdAt,
       };
     }
+
+    // Drop the working field before sending
+    for (const row of Object.values(latestByPr)) delete (row as any)._scores;
 
     return res.status(200).json({
       message: "Repository reviews fetched",

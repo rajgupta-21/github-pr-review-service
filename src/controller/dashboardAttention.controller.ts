@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ReviewModel } from "../schema/Review.schema";
+import { collapseRunPasses } from "../services/reviewStore.service";
 
 /*
 Feeds the "Needs your attention" list on the dashboard.
@@ -41,17 +42,8 @@ export async function DashboardAttention(req: Request, res: Response) {
       .sort({ createdAt: -1 })
       .lean();
 
-    const latestByPr = new Map<string, (typeof reviews)[number]>();
-
-    for (const review of reviews) {
-      const key = `${review.repoId}#${review.prNumber}`;
-
-      if (!latestByPr.has(key)) {
-        latestByPr.set(key, review);
-      }
-    }
-
-    const latest = [...latestByPr.values()];
+    // Merge the passes of each PR's most recent run — see collapseRunPasses
+    const latest = collapseRunPasses(reviews);
 
     const blocked = latest.filter(
       (r) => (r.criticalCount || 0) > 0 || (r.highCount || 0) > 0,

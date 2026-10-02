@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { ReviewModel } from "../schema/Review.schema";
+import { collapseRunPasses } from "../services/reviewStore.service";
 
 /*
 Feeds the repositories table — one row per connected repo with the
@@ -66,15 +67,8 @@ export async function RepoOverview(req: Request, res: Response) {
       per PR means fixing a finding lifts the number instead of leaving the
       bad run in the average forever.
       */
-      const latestByPr = new Map<number, (typeof repoReviews)[number]>();
-
-      for (const review of repoReviews) {
-        if (!latestByPr.has(review.prNumber)) {
-          latestByPr.set(review.prNumber, review);
-        }
-      }
-
-      const latest = [...latestByPr.values()];
+      // Merge each PR's run passes so totals match the PR screen
+      const latest = collapseRunPasses(repoReviews);
 
       const health =
         latest.length > 0

@@ -55,7 +55,7 @@ export async function FetchStoredReview(req: Request, res: Response) {
       });
     }
 
-    const review = await ReviewModel.findOne({
+    const newest = await ReviewModel.findOne({
       userId,
       repoId: connectedRepo._id,
       prNumber: parsedPrNumber,
@@ -63,12 +63,72 @@ export async function FetchStoredReview(req: Request, res: Response) {
       .sort({ createdAt: -1 })
       .lean();
 
-    if (!review) {
+    if (!newest) {
       return res.status(404).json({
         message: "No review stored for this pull request yet",
         action: "not reviewed",
       });
     }
+
+    /*
+    A workflow run executes several passes — security scan, code review,
+    performance — and each stores its own review. Returning only the newest
+    meant returning whichever pass finished last, which is often the one
+    that found nothing, hiding the findings of the others.
+
+    Passes of one run share a runId, so they are combined here into the
+    single review the user thinks of. A hand-started review has no runId
+    and stands alone.
+    */
+    const passes = newest.runId
+      ? await ReviewModel.find({
+          userId,
+          repoId: connectedRepo._id,
+          prNumber: parsedPrNumber,
+          runId: newest.runId,
+        })
+          .sort({ createdAt: 1 })
+          .lean()
+      : [newest];
+
+    const findings = passes.flatMap((pass) => pass.findings ?? []);
+    const strengths = [...new Set(passes.flatMap((pass) => pass.strengths ?? []))];
+
+    const countAt = (severity: string) =>
+      findings.filter((finding) => finding.severity === severity).length;
+
+    /*
+    Scores are averaged across the passes that produced them. A pass that
+    did not look at security should not drag the security score to zero,
+    so only non-zero contributions count.
+    */
+    const averageOf = (key: "overallScore" | "securityScore" | "performanceScore" | "qualityScore") => {
+      const values = passes.map((pass) => pass[key] ?? 0).filter((value) => value > 0);
+      if (values.length === 0) return 0;
+      return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+    };
+
+    const review = {
+      ...newest,
+      findings,
+      strengths,
+      // The summary of the pass that actually found something reads best
+      summary:
+        passes.find((pass) => (pass.findings?.length ?? 0) > 0)?.summary ?? newest.summary,
+      overallScore: averageOf("overallScore"),
+      securityScore: averageOf("securityScore"),
+      performanceScore: averageOf("performanceScore"),
+      qualityScore: averageOf("qualityScore"),
+      criticalCount: countAt("Critical"),
+      highCount: countAt("High"),
+      mediumCount: countAt("Medium"),
+      lowCount: countAt("Low"),
+      // "Request Changes" from any pass wins — one blocker is enough
+      recommendation: passes.some((pass) => pass.recommendation === "Request Changes")
+        ? "Request Changes"
+        : "Approve",
+      durationMs: passes.reduce((total, pass) => total + (pass.durationMs ?? 0), 0),
+    };
 
     /*
     The run that produced this review, for the trace panel beside it.
@@ -127,6 +187,8 @@ export async function FetchStoredReview(req: Request, res: Response) {
       mergeGate: connectedRepo.settings?.mergeGate || "Critical",
       // Named on screen so a team can judge whether to trust it
       model: review.model ?? null,
+      // How many review passes were combined into this view
+      passCount: passes.length,
     });
   } catch (error) {
     console.error("FetchStoredReview error:", error);

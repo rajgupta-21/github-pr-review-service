@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { ReviewModel } from "../schema/Review.schema";
 import { PrModel } from "../schema/Pr.schema";
+import { collapseRunPasses } from "../services/reviewStore.service";
 
 /*
 Every pull request across every connected repository, in one request.
@@ -45,11 +46,10 @@ export async function AllPulls(req: Request, res: Response) {
         .lean(),
     ]);
 
-    // Newest review per repo+PR
+    // One merged review per PR, built from its latest run's passes
     const latestReview = new Map<string, (typeof reviews)[number]>();
-    for (const review of reviews) {
-      const key = `${review.repoId}#${review.prNumber}`;
-      if (!latestReview.has(key)) latestReview.set(key, review);
+    for (const review of collapseRunPasses(reviews)) {
+      latestReview.set(`${review.repoId}#${review.prNumber}`, review);
     }
 
     const pullRequests = pulls.map((pr) => {

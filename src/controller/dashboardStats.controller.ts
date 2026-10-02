@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { ConnectedRepo } from "../schema/ConnectedRepository.schema";
 import { ReviewModel } from "../schema/Review.schema";
+import { collapseRunPasses } from "../services/reviewStore.service";
 
 /*
 Feeds the four stat cards at the top of the dashboard.
@@ -86,18 +87,15 @@ export async function DashboardStats(req: Request, res: Response) {
     or High — that is the same rule the merge gate uses.
     */
     const countClean = (reviews: typeof current) => {
-      const newestByPr = new Map<string, (typeof reviews)[number]>();
+      /*
+      Sorted newest first so collapseRunPasses folds the right run. A PR is
+      clean only when every pass of its latest run found nothing serious.
+      */
+      const sorted = [...reviews].sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+      );
 
-      for (const review of reviews) {
-        const key = `${review.repoId}#${review.prNumber}`;
-        const seen = newestByPr.get(key);
-
-        if (!seen || review.createdAt > seen.createdAt) {
-          newestByPr.set(key, review);
-        }
-      }
-
-      return [...newestByPr.values()].filter(
+      return collapseRunPasses(sorted).filter(
         (r) => (r.criticalCount || 0) === 0 && (r.highCount || 0) === 0,
       ).length;
     };
